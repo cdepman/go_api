@@ -1,6 +1,7 @@
 package main
 
 import (
+  "encoding/json"
   "fmt"
   "github.com/julienschmidt/httprouter"
   "database/sql"
@@ -26,11 +27,14 @@ func Hello( w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
 }
 
 func TestFetch( w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
-  var (
-    id int
-    name string
-    data string
-  )
+  type Record struct {
+    Id int
+    Name string
+    Data string
+  }
+  type RecordSlice struct {
+    Records []Record
+  }
   db, err := sql.Open("postgres", "user=charlie dbname=eventdb sslmode=disable")
   if err != nil {
     log.Fatal(err)
@@ -40,18 +44,31 @@ func TestFetch( w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
     log.Fatal(err)
   }
   defer rows.Close()
+  var record RecordSlice
+  var id int
+  var name string
+  var data string
   for rows.Next() {
     err := rows.Scan(&id, &name, &data)
     if err != nil {
       log.Fatal(err)
     }
-    log.Println(id, name)
+    log.Println(id)
+    log.Println(name)
+    log.Println(data)
+    record.Records = append(record.Records, Record{id, name, data})
   }
   err = rows.Err()
   if err != nil {
     log.Fatal(err)
   }
-  fmt.Fprintf(w, "hello, %s!\n", "friend")
+  j, err := json.Marshal(record)
+  if err != nil {
+    fmt.Println("json err:", err)
+  }
+  fmt.Println(string(j))
+  log.Println(id, name, data)
+  fmt.Fprintf(w, string(j))
 }
 
 func main() {
