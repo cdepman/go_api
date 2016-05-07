@@ -1,7 +1,9 @@
 package main
 
 import (
+  "time"
   "encoding/json"
+  "path"
   "fmt"
   "github.com/julienschmidt/httprouter"
   "database/sql"
@@ -26,7 +28,42 @@ func Hello( w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
   fmt.Fprintf(w, "hello, %s!\n", ps.ByName("name"))
 }
 
-func TestFetch( w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+func ImageFetcher( w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+  filePath := path.Join("images", "jump_dog.jpg")
+  http.ServeFile(w, r, filePath)
+}
+
+func FetchPGJSON( w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+  start := time.Now()
+  db, err := sql.Open("postgres", "user=charlie dbname=eventdb sslmode=disable")
+  if err != nil {
+    log.Fatal(err)
+  }
+  rows, err := db.Query("SELECT json_agg(test) FROM test")
+  if err != nil {
+    log.Fatal(err)
+  }
+  defer rows.Close()
+  result := ""
+  var jsonRecord string
+  for rows.Next() {
+    err := rows.Scan(&jsonRecord)
+    if err != nil {
+      log.Fatal(err)
+    }
+    result += jsonRecord
+  }
+  err = rows.Err()
+  if err != nil {
+    log.Fatal(err)
+  }
+  fmt.Fprintf(w, result)
+  elapsed := time.Since(start)
+  log.Printf("fetch with PG serialization took %s", elapsed)
+}
+
+func FetchGoJSON( w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
+  start := time.Now()
   type Record struct {
     Id int
     Name string
@@ -53,9 +90,6 @@ func TestFetch( w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
     if err != nil {
       log.Fatal(err)
     }
-    log.Println(id)
-    log.Println(name)
-    log.Println(data)
     record.Records = append(record.Records, Record{id, name, data})
   }
   err = rows.Err()
@@ -66,16 +100,18 @@ func TestFetch( w http.ResponseWriter, r *http.Request, ps httprouter.Params) {
   if err != nil {
     fmt.Println("json err:", err)
   }
-  fmt.Println(string(j))
-  log.Println(id, name, data)
   fmt.Fprintf(w, string(j))
+  elapsed := time.Since(start)
+  log.Printf("fetch with Go serialization took %s", elapsed)
 }
 
 func main() {
   router := httprouter.New()
   router.GET("/", Index)
   router.GET("/hello/:name", Hello)
-  router.GET("/fetch", TestFetch)
+  router.GET("/fetchJson1", FetchPGJSON)
+  router.GET("/fetchJson2", FetchGoJSON)
+  router.GET("/image", ImageFetcher)
 
-  log.Fatal(http.ListenAndServe(":8080", router))
+  log.Fatal(http.ListenAndServe(":3000", router))
 }
